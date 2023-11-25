@@ -159,6 +159,8 @@ def _build_airbyte_assets_from_metadata(
     normalization_tables = cast(Mapping[str, List[str]], metadata["normalization_tables"])
     io_manager_key = cast(Optional[str], metadata["io_manager_key"])
 
+
+
     @multi_asset(
         name=f"airbyte_sync_{connection_id[:5]}",
         deps=list((assets_defn_meta.keys_by_input_name or {}).values()),
@@ -471,7 +473,9 @@ class AirbyteConnectionMetadata(
 
         for stream in enabled_streams:
             name = cast(str, stream.get("stream", {}).get("name"))
-            prefixed_name = f"{self.stream_prefix}{name}"
+            #wsz
+            #prefixed_name = f"{self.stream_prefix}{name}"
+            prefixed_name = f"{self.stream_prefix}{_table_to_output_name_fn(name)}"
 
             schema = (
                 stream["stream"]["json_schema"]
@@ -601,6 +605,7 @@ class AirbyteCoreCacheableAssetsDefinition(CacheableAssetsDefinition):
         data: Sequence[AssetsDefinitionCacheableData],
         resource_defs: Optional[Mapping[str, ResourceDefinition]] = None,
     ) -> Sequence[AssetsDefinition]:
+        #raise Exception("Details: " + str(data) + " >> " + str(resource_defs))
         return [_build_airbyte_assets_from_metadata(meta, resource_defs) for meta in data]
 
     def build_definitions(
@@ -638,20 +643,11 @@ class AirbyteInstanceCacheableAssetsDefinition(AirbyteCoreCacheableAssetsDefinit
             connection_to_auto_materialize_policy_fn=connection_to_auto_materialize_policy_fn,
         )
         self._workspace_id = workspace_id
-
-        if isinstance(airbyte_resource_def, AirbyteResource):
-            # We hold a copy which is not fully processed, this retains e.g. EnvVars for
-            # display in the UI
-            self._partially_initialized_airbyte_instance = airbyte_resource_def
-            # The processed copy is used to query the Airbyte instance
-            self._airbyte_instance: (
-                AirbyteResource
-            ) = self._partially_initialized_airbyte_instance.process_config_and_initialize()
-        else:
-            self._partially_initialized_airbyte_instance = airbyte_resource_def(
-                build_init_resource_context()
-            )
-            self._airbyte_instance: AirbyteResource = self._partially_initialized_airbyte_instance
+        self._airbyte_instance: AirbyteResource = (
+            airbyte_resource_def.process_config_and_initialize()
+            if isinstance(airbyte_resource_def, AirbyteResource)
+            else airbyte_resource_def(build_init_resource_context())
+        )
 
     def _get_connections(self) -> Sequence[Tuple[str, AirbyteConnectionMetadata]]:
         workspace_id = self._workspace_id
@@ -703,8 +699,7 @@ class AirbyteInstanceCacheableAssetsDefinition(AirbyteCoreCacheableAssetsDefinit
         self, data: Sequence[AssetsDefinitionCacheableData]
     ) -> Sequence[AssetsDefinition]:
         return super()._build_definitions_with_resources(
-            data,
-            {"airbyte": self._partially_initialized_airbyte_instance.get_resource_definition()},
+            data, {"airbyte": self._airbyte_instance.get_resource_definition()}
         )
 
 
